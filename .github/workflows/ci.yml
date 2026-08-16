@@ -85,12 +85,19 @@ jobs:
   # lifecycle scripts, so a consumer's profile never has to run the `prepare`
   # build (which pnpm blocks for git-hosted packages).
   #
-  # The build is committed as an orphan commit and published two ways:
-  #   - tag `v<version>`, so `#semver:` ranges resolve to an installable tree:
-  #       dsh plugin add "github:hojulian/modal-dsh#semver:0.1.0"
-  #     This is why the tag is created here rather than pushed by hand — a tag
-  #     on a source commit would resolve to the unbuildable source tree.
-  #   - branch `release`, force-pushed, always pointing at the newest release.
+  # The build is committed onto the `release` branch and tagged `v<version>`,
+  # which gives consumers two install modes:
+  #   - latest:  dsh plugin add github:hojulian/modal-dsh
+  #     A ref-less spec resolves to the repo's DEFAULT BRANCH, so `release` must
+  #     be set as the default branch in repo settings for this to work.
+  #   - pinned:  dsh plugin add "github:hojulian/modal-dsh#semver:0.1.0"
+  #     `#semver:` resolves against the repo's semver tags and checks out that
+  #     tag's tree — which is why the tag is created here, on the built commit,
+  #     rather than pushed by hand onto a source commit.
+  #
+  # `release` accumulates history (one commit per release) rather than being
+  # rewritten: it is a default branch and a tag target, so force-pushing it
+  # would break clones and let released tags be garbage-collected.
   #
   # Manual trigger on `main` only; the test jobs must pass on the same commit.
   publish-release:
@@ -124,19 +131,39 @@ jobs:
         run: pnpm run build
       - name: Assemble release tree
         run: node scripts/build-release-branch.mjs
-      - name: Push release tag and branch
+      - name: Commit to release branch and tag
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
-        working-directory: release-branch
         run: |
           set -euo pipefail
-          git init -q -b release
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # Check out the existing release branch (shallow), or start it if this
+          # is the first release.
+          git init -q release-git
+          cd release-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "$remote"
+          if git fetch -q --depth=1 origin release 2>/dev/null; then
+            git checkout -q -B release FETCH_HEAD
+          else
+            echo "release branch does not exist yet; starting it"
+            git checkout -q -b release
+          fi
+
+          # Replace the tree wholesale so files dropped from the build (or from
+          # package.json's `files`) disappear from the branch too.
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a ../release-branch/. .
+
           git add -A
-          git commit -q -m "release v${VERSION}" -m "Built by ci.yml from ${GITHUB_SHA}. Do not commit here; edit main."
+          if git diff --cached --quiet; then
+            echo "build is identical to the current release tip; tagging it as-is"
+          else
+            git commit -q -m "release v${VERSION}" -m "Built by ci.yml from ${GITHUB_SHA}. Do not commit here; edit main."
+          fi
           git tag "v${VERSION}"
-          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push -q "$remote" "v${VERSION}"
-          git push -q --force "$remote" release
+          git push -q origin release
+          git push -q origin "v${VERSION}"
