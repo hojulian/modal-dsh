@@ -1,0 +1,25 @@
+# modal-dsh
+
+> DeepSeek Harness plugin for Modal cloud sandboxes. Seven `modal_sandbox_*` tools over a long-lived child process that hosts the Modal JavaScript SDK.
+
+## Key facts
+
+- Tools: create, exec, exec_wait, output, info, terminate, set_credentials
+- Architecture: plugin (host process) ⇄ NDJSON over stdio ⇄ `bridge.mjs` (owns the Modal SDK and the sandbox registry)
+- The bridge ships inside the package (`lib/bridge.mjs`), is written into `<workspaceRoot>/modal-dsh`, and gets the SDK via a one-time `npm install`
+- Credential order: `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` env → DSH credential named `modal` → `credentials.json`
+- Runtime guard: `assertPeerCompatible()` rejects silently-linked older `@deepseek-ai/dsh-tools` copies
+- Sandboxes survive a bridge restart — they re-attach by ID via `client.sandboxes.fromId`
+
+## Key files
+
+- src/index.ts — plugin entry: name, inject, Config, apply, peer guard
+- src/bridge-host.ts — child-process supervisor, bootstrap, credentials, NDJSON protocol
+- src/tools.ts — the seven tool definitions
+- src/bridge.mjs — the Modal SDK host process (shipped verbatim)
+- scripts/integration-test.mjs — packed-artifact install + real tool invocation
+
+## Upstream
+
+- Modal JS SDK: https://modal.com
+- DSH plugin template: https://github.com/zoahdev/dsh-plugin-template
