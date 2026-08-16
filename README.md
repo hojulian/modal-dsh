@@ -40,11 +40,11 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin tha
 │   └── version.spec.ts       # prerelease range behavior matrix (unit)
 ├── scripts/
 │   ├── copy-bridge.mjs       # ships src/bridge.mjs alongside the compiled output
-│   ├── build-release-branch.mjs # assembles the scripts-free tree pushed to the `release` branch
+│   ├── build-release-branch.mjs # assembles the scripts-free tree published as a v* tag
 │   ├── integration-test.mjs  # installs the PACKED tarball, registers the tools via apply(),
 │   │                         # bootstraps the real bridge host, executes a real handler
 │   └── dsh-smoke.sh          # fresh DSH profile install + config check + web boot (bounded retry)
-├── .github/workflows/ci.yml  # doctor → typecheck → build → unit tests → pack → integration → DSH boot → release (tags)
+├── .github/workflows/ci.yml  # doctor → typecheck → build → unit tests → pack → integration → DSH boot → release (manual)
 └── README.md                 # bilingual
 ```
 
@@ -70,20 +70,23 @@ On activation the plugin:
 ## Install
 
 ```sh
-dsh plugin --profile web add github:hojulian/modal-dsh#release
+dsh plugin --profile web add "github:hojulian/modal-dsh#semver:0.1.0"
 dsh web --port 4099
 ```
 
-Install from the `release` branch, not `main`. `main` is TypeScript source and its
-`prepare` script would have to build inside your DSH profile, which pnpm blocks
-for git-hosted packages (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`). The `release`
-branch carries prebuilt `lib/` with no lifecycle scripts.
+`#semver:` takes any semver range — `^0.1.0`, `~0.1.0`, or an exact `0.1.0` —
+and resolves it against the repo's release tags.
 
-It is published by CI when a `v*` tag is pushed, and always points at the newest
-release. To pin a specific one, use the immutable tag CI pushes alongside it:
+Do not install from `main`: it is TypeScript source, and its `prepare` script
+would have to build inside your DSH profile, which pnpm blocks for git-hosted
+packages (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`). The `v*` tags point at
+prebuilt commits carrying `lib/` with no lifecycle scripts, so nothing is built
+on your side.
+
+The `release` branch tracks the newest release if you'd rather not pin:
 
 ```sh
-dsh plugin --profile web add github:hojulian/modal-dsh#release-v0.1.0
+dsh plugin --profile web add github:hojulian/modal-dsh#release
 ```
 
 ### From source
@@ -136,7 +139,9 @@ Token values are never logged and never appear in the tool's presented call card
 1. `doctor` — [dsh-plugin-doctor-action](https://github.com/zoahdev/dsh-plugin-doctor-action) on the manifest and bundle
 2. `test-and-load` (ubuntu) — `pnpm install --frozen-lockfile` → `pnpm typecheck` → `node --check src/bridge.mjs` → `pnpm run build` → `pnpm test` → `pnpm pack` → **packaged integration**: `scripts/integration-test.mjs` installs the actual tarball into a fresh project, registers all seven tools through the real `apply()` / `ctx.tools.register` path, runs the real bridge bootstrap (asserting the packaged bridge source is written out and handshaked), executes a real handler over the real protocol, and asserts the rendered result — plus a second scenario asserting the peer guard rejects `0.1.0-rc.3`
 3. `dsh-smoke` (**windows-latest**) — fresh `DSH_HOME`, plugin row in `--dump-config`, `dsh web` boot with a 30 s bounded retry
-4. `publish-release` (`v*` tags only, after all three pass) — verifies the tag matches `package.json`'s version, then `scripts/build-release-branch.mjs` packs the build and strips `scripts`/`devDependencies` from the packed `package.json`. The result is force-pushed as a single orphan commit on the `release` branch and tagged `release-<tag>` for pinning
+4. `publish-release` (manual `workflow_dispatch` on `main`, after all three pass) — reads the version from `package.json` and refuses to proceed if `v<version>` already exists, then `scripts/build-release-branch.mjs` packs the build and strips `scripts`/`devDependencies` from the packed `package.json`. The result is committed as an orphan commit, tagged `v<version>`, and force-pushed to the `release` branch
+
+To cut a release: bump `version` in `package.json` on `main`, then run the `ci` workflow manually from the Actions tab. The tag is created by CI on the **built** commit — pushing a `v*` tag by hand would point it at the source tree, which is exactly what consumers cannot install.
 
 > Upstream note: `dsh web` (0.1.0-rc.6 npm CLI) currently fails to boot on GitHub Actions ubuntu-latest because the `@deepseek-ai/dsh-subprocess-local` native `pty.node` linux-x64 prebuild is missing from the published package, so the boot smoke runs on Windows. Tracked upstream in [discussion #1686](https://github.com/deepseek-ai/deepseek-harness/discussions/1686).
 
@@ -201,16 +206,23 @@ Modal 的 JS SDK 无法加载进插件的执行环境，因此插件随包附带
 ## 使用
 
 ```sh
-dsh plugin --profile web add github:hojulian/modal-dsh#release
+dsh plugin --profile web add "github:hojulian/modal-dsh#semver:0.1.0"
 dsh web --port 4099
 ```
 
-请从 `release` 分支安装，而不是 `main`。`main` 只有 TypeScript 源码，其
-`prepare` 脚本需要在你的 DSH profile 里执行构建，而 pnpm 会拒绝 git 依赖执行构建脚本
-（`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`）。`release` 分支包含预编译的
-`lib/`，且不带任何生命周期脚本，由 CI 在推送 `v*` tag 时发布，始终指向最新的一次发布。
-需要固定版本时使用 CI 同时推送的不可变 tag，例如
-`github:hojulian/modal-dsh#release-v0.1.0`。
+`#semver:` 接受任意 semver 范围（`^0.1.0`、`~0.1.0` 或精确的 `0.1.0`），并在仓库的
+发布 tag 中解析。
+
+不要从 `main` 安装：`main` 只有 TypeScript 源码，其 `prepare` 脚本需要在你的 DSH
+profile 里执行构建，而 pnpm 会拒绝 git 依赖执行构建脚本
+（`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`）。`v*` tag 指向预编译好的提交，包含 `lib/`
+且不带任何生命周期脚本，你这边不需要构建。
+
+如果不想固定版本，`release` 分支始终指向最新一次发布：
+
+```sh
+dsh plugin --profile web add github:hojulian/modal-dsh#release
+```
 
 ### 从源码构建
 

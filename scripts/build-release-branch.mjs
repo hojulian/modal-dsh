@@ -5,8 +5,10 @@
  * `main` carries TypeScript source only, so `pnpm add github:hojulian/modal-dsh`
  * would have to run the `prepare` build in the consumer's environment — which
  * pnpm 10 blocks for git-hosted packages (ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED).
- * The `release` branch is the git-installable form: prebuilt `lib/`, and a
- * package.json with no lifecycle scripts so pnpm has nothing to build.
+ * This tree is the git-installable form: prebuilt `lib/`, and a package.json
+ * with no lifecycle scripts so pnpm has nothing to build. CI commits it and
+ * publishes it as the `v<version>` tag (which is what `#semver:` ranges
+ * resolve against) and as the `release` branch.
  *
  * The file set comes from `pnpm pack`, so it always matches the `files` field
  * in package.json rather than a second list that can drift.
