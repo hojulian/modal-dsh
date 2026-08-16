@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Cutting a release: run this workflow manually on `main`. The version comes
+  # from package.json — bump it in a normal PR first. The `v<version>` tag
+  # cannot be pushed from a source commit, because it has to land on the built
+  # commit for `#semver:` to resolve to something installable (see
+  # publish-release below).
+  workflow_dispatch:
 
 jobs:
   doctor:
@@ -35,9 +41,17 @@ jobs:
       - name: Unit tests
         run: pnpm test
       - name: Pack
-        run: pnpm pack
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          # pnpm pack prints the tarball it wrote; keep a leading ./ on bare
+          # names so `plugin add` reads it as a path, not a registry package.
+          file="$(pnpm pack | tail -1)"
+          case "$file" in /*|[A-Za-z]:*) ;; *) file="./$file" ;; esac
+          echo "tgz=$file" >> "$GITHUB_OUTPUT"
       - name: Packaged integration + real tool invocation
-        run: node scripts/integration-test.mjs ./modal-dsh-0.1.0.tgz
+        run: node scripts/integration-test.mjs "${{ steps.pack.outputs.tgz }}"
 
   dsh-smoke:
     runs-on: windows-latest
@@ -54,6 +68,102 @@ jobs:
       - name: Build
         run: pnpm run build
       - name: Pack
-        run: pnpm pack
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          # pnpm pack prints the tarball it wrote; keep a leading ./ on bare
+          # names so `plugin add` reads it as a path, not a registry package.
+          file="$(pnpm pack | tail -1)"
+          case "$file" in /*|[A-Za-z]:*) ;; *) file="./$file" ;; esac
+          echo "tgz=$file" >> "$GITHUB_OUTPUT"
       - name: Fresh DSH profile install + boot smoke
-        run: bash scripts/dsh-smoke.sh ./modal-dsh-0.1.0.tgz
+        shell: bash
+        run: bash scripts/dsh-smoke.sh "${{ steps.pack.outputs.tgz }}"
+
+  # Publishes the git-installable form of the plugin: prebuilt lib/ with no
+  # lifecycle scripts, so a consumer's profile never has to run the `prepare`
+  # build (which pnpm blocks for git-hosted packages).
+  #
+  # The build is committed onto the `release` branch and tagged `v<version>`,
+  # which gives consumers two install modes:
+  #   - latest:  dsh plugin add github:hojulian/modal-dsh
+  #     A ref-less spec resolves to the repo's DEFAULT BRANCH, so `release` must
+  #     be set as the default branch in repo settings for this to work.
+  #   - pinned:  dsh plugin add "github:hojulian/modal-dsh#semver:0.1.0"
+  #     `#semver:` resolves against the repo's semver tags and checks out that
+  #     tag's tree — which is why the tag is created here, on the built commit,
+  #     rather than pushed by hand onto a source commit.
+  #
+  # `release` accumulates history (one commit per release) rather than being
+  # rewritten: it is a default branch and a tag target, so force-pushing it
+  # would break clones and let released tags be garbage-collected.
+  #
+  # Manual trigger on `main` only; the test jobs must pass on the same commit.
+  publish-release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: [doctor, test-and-load, dsh-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Resolve version and check the tag is free
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
+            echo "::error::tag v${version} already exists; bump the version in package.json before releasing"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "releasing v${version}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Build
+        run: pnpm run build
+      - name: Assemble release tree
+        run: node scripts/build-release-branch.mjs
+      - name: Commit to release branch and tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # Check out the existing release branch (shallow), or start it if this
+          # is the first release.
+          git init -q release-git
+          cd release-git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "$remote"
+          if git fetch -q --depth=1 origin release 2>/dev/null; then
+            git checkout -q -B release FETCH_HEAD
+          else
+            echo "release branch does not exist yet; starting it"
+            git checkout -q -b release
+          fi
+
+          # Replace the tree wholesale so files dropped from the build (or from
+          # package.json's `files`) disappear from the branch too.
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a ../release-branch/. .
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "build is identical to the current release tip; tagging it as-is"
+          else
+            git commit -q -m "release v${VERSION}" -m "Built by ci.yml from ${GITHUB_SHA}. Do not commit here; edit main."
+          fi
+          git tag "v${VERSION}"
+          git push -q origin release
+          git push -q origin "v${VERSION}"

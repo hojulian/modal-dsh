@@ -1,5 +1,6 @@
 node_modules/
 lib/
+release-branch/
 *.tgz
 .DS_Store
 credentials.json
