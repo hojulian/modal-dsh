@@ -1,1 +1,61 @@
-{"name":"modal-dsh","private":true,"version":"0.1.0","type":"module","description":"Long-lived bridge process hosting the Modal JS SDK for the DSH modal-dsh plugin.","dependencies":{"modal":"^0.9.0"}}
+{
+  "name": "modal-dsh",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin for Modal cloud sandboxes: create, exec, inspect, and terminate Modal Sandboxes from a DSH session.",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-bridge.mjs",
+    "prepare": "pnpm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "node scripts/integration-test.mjs",
+    "test:dsh-smoke": "bash scripts/dsh-smoke.sh"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "modal",
+    "sandbox",
+    "cordis",
+    "agent"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hojulian/modal-dsh.git"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
+    "@types/node": "^22.20.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

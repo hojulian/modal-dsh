@@ -1,8 +1,12 @@
 // modal-dsh: DSH Modal sandbox bridge
 // ------------------------
 // Long-lived child process that hosts the Modal JavaScript SDK on behalf of
-// the DSH "modal-dsh" dynamic Cordis plugin (which cannot `require`
-// modules in its restricted plain-JS execution environment).
+// the DSH "modal-dsh" plugin. The plugin ships this file, writes it into the
+// workspace bridge dir, installs the SDK next to it, and spawns it.
+//
+// Shipped as plain .mjs (not compiled from TypeScript): it runs in a workspace
+// directory whose only dependency is the Modal SDK, so the file the plugin
+// writes out must be directly runnable by node.
 //
 // Protocol: newline-delimited JSON over stdin/stdout.
 //   request:  {"id": <number>, "method": "<name>", "params": {...}}
@@ -14,8 +18,10 @@
 
 import { ModalClient } from 'modal';
 
-const APP_NAME = 'modal-dsh-sandboxes';
-const DEFAULT_IMAGE = 'python:3.13';
+// Both are supplied by the plugin from its cordis.yml config; the literals are
+// the defaults for a bridge started by hand.
+const APP_NAME = process.env.MODAL_DSH_APP_NAME || 'modal-dsh-sandboxes';
+const DEFAULT_IMAGE = process.env.MODAL_DSH_DEFAULT_IMAGE || 'python:3.13';
 const MAX_MAIN_TAIL = 256 * 1024; // per main-process stream, retained tail
 const MAX_EXEC_TAIL = 1024 * 1024; // per exec stream, retained tail
 const DEFAULT_SANDBOX_TIMEOUT_MS = 30 * 60 * 1000;

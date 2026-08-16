@@ -1,0 +1,7 @@
+- insert:
+    - id: modal-dsh
+      name: modal-dsh
+      config:
+        bridgeRoot: ''
+        appName: 'modal-dsh-sandboxes'
+        defaultImage: 'python:3.13'
