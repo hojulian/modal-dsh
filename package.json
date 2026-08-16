@@ -1,0 +1,1 @@
+{"name":"dsh-modal-sandbox-bridge","private":true,"version":"0.1.0","type":"module","description":"Long-lived bridge process hosting the Modal JS SDK for the DSH Modal Sandbox plugin.","dependencies":{"modal":"^0.9.0"}}
