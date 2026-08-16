@@ -25,7 +25,7 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin tha
 ## What's inside
 
 ```text
-├── package.json              # dsh.bundle manifest + build scripts (prepare = git-install build)
+├── package.json              # dsh.bundle manifest + build scripts
 ├── cordis.patch.yml          # plugin row: id, package name, config
 ├── src/
 │   ├── index.ts              # plugin entry: name / inject / Config / apply + runtime peer guard
@@ -40,10 +40,11 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin tha
 │   └── version.spec.ts       # prerelease range behavior matrix (unit)
 ├── scripts/
 │   ├── copy-bridge.mjs       # ships src/bridge.mjs alongside the compiled output
+│   ├── build-release-branch.mjs # assembles the scripts-free tree pushed to the `release` branch
 │   ├── integration-test.mjs  # installs the PACKED tarball, registers the tools via apply(),
 │   │                         # bootstraps the real bridge host, executes a real handler
 │   └── dsh-smoke.sh          # fresh DSH profile install + config check + web boot (bounded retry)
-├── .github/workflows/ci.yml  # doctor → typecheck → build → unit tests → pack → integration → DSH boot
+├── .github/workflows/ci.yml  # doctor → typecheck → build → unit tests → pack → integration → DSH boot → release (tags)
 └── README.md                 # bilingual
 ```
 
@@ -67,6 +68,25 @@ On activation the plugin:
 4. respawns the bridge on the next tool call if it died — sandboxes re-attach by ID (`client.sandboxes.fromId`), so cloud state survives a bridge restart.
 
 ## Install
+
+```sh
+dsh plugin --profile web add github:hojulian/modal-dsh#release
+dsh web --port 4099
+```
+
+Install from the `release` branch, not `main`. `main` is TypeScript source and its
+`prepare` script would have to build inside your DSH profile, which pnpm blocks
+for git-hosted packages (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`). The `release`
+branch carries prebuilt `lib/` with no lifecycle scripts.
+
+It is published by CI when a `v*` tag is pushed, and always points at the newest
+release. To pin a specific one, use the immutable tag CI pushes alongside it:
+
+```sh
+dsh plugin --profile web add github:hojulian/modal-dsh#release-v0.1.0
+```
+
+### From source
 
 ```sh
 git clone https://github.com/hojulian/modal-dsh.git
@@ -116,6 +136,7 @@ Token values are never logged and never appear in the tool's presented call card
 1. `doctor` — [dsh-plugin-doctor-action](https://github.com/zoahdev/dsh-plugin-doctor-action) on the manifest and bundle
 2. `test-and-load` (ubuntu) — `pnpm install --frozen-lockfile` → `pnpm typecheck` → `node --check src/bridge.mjs` → `pnpm run build` → `pnpm test` → `pnpm pack` → **packaged integration**: `scripts/integration-test.mjs` installs the actual tarball into a fresh project, registers all seven tools through the real `apply()` / `ctx.tools.register` path, runs the real bridge bootstrap (asserting the packaged bridge source is written out and handshaked), executes a real handler over the real protocol, and asserts the rendered result — plus a second scenario asserting the peer guard rejects `0.1.0-rc.3`
 3. `dsh-smoke` (**windows-latest**) — fresh `DSH_HOME`, plugin row in `--dump-config`, `dsh web` boot with a 30 s bounded retry
+4. `publish-release` (`v*` tags only, after all three pass) — verifies the tag matches `package.json`'s version, then `scripts/build-release-branch.mjs` packs the build and strips `scripts`/`devDependencies` from the packed `package.json`. The result is force-pushed as a single orphan commit on the `release` branch and tagged `release-<tag>` for pinning
 
 > Upstream note: `dsh web` (0.1.0-rc.6 npm CLI) currently fails to boot on GitHub Actions ubuntu-latest because the `@deepseek-ai/dsh-subprocess-local` native `pty.node` linux-x64 prebuild is missing from the published package, so the boot smoke runs on Windows. Tracked upstream in [discussion #1686](https://github.com/deepseek-ai/deepseek-harness/discussions/1686).
 
@@ -178,6 +199,20 @@ MIT © 2026 Julian Ho
 Modal 的 JS SDK 无法加载进插件的执行环境，因此插件随包附带 `bridge.mjs`：一个常驻 Node 子进程，持有唯一的 `ModalClient`、沙箱注册表与有界输出缓冲，双方以 stdio 上的 NDJSON 通信。激活时插件把**打包内的** `lib/bridge.mjs` 写入 `<workspaceRoot>/modal-dsh`，必要时执行一次 `npm install`，随后 spawn、ping、`configure`。bridge 挂掉会在下次工具调用时重启——沙箱按 ID 重新 attach，云端状态不会丢失。
 
 ## 使用
+
+```sh
+dsh plugin --profile web add github:hojulian/modal-dsh#release
+dsh web --port 4099
+```
+
+请从 `release` 分支安装，而不是 `main`。`main` 只有 TypeScript 源码，其
+`prepare` 脚本需要在你的 DSH profile 里执行构建，而 pnpm 会拒绝 git 依赖执行构建脚本
+（`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`）。`release` 分支包含预编译的
+`lib/`，且不带任何生命周期脚本，由 CI 在推送 `v*` tag 时发布，始终指向最新的一次发布。
+需要固定版本时使用 CI 同时推送的不可变 tag，例如
+`github:hojulian/modal-dsh#release-v0.1.0`。
+
+### 从源码构建
 
 ```sh
 git clone https://github.com/hojulian/modal-dsh.git

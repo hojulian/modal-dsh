@@ -3,6 +3,7 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -57,3 +58,56 @@ jobs:
         run: pnpm pack
       - name: Fresh DSH profile install + boot smoke
         run: bash scripts/dsh-smoke.sh ./modal-dsh-0.1.0.tgz
+
+  # Publishes the git-installable form of the plugin to the `release` branch:
+  # prebuilt lib/ with no lifecycle scripts, so `dsh plugin add
+  # github:hojulian/modal-dsh#release` needs no build step in the consumer's
+  # profile. Runs only for `v*` tags, after the test jobs pass on that tag.
+  #
+  # `release` is rewritten (single orphan commit) on each release, so it always
+  # points at the newest one. Each release is also pushed as an immutable
+  # `release-<tag>` tag, which is what consumers should pin to.
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [doctor, test-and-load, dsh-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check tag matches package.json version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${pkg}"
+            exit 1
+          fi
+      - name: Build
+        run: pnpm run build
+      - name: Assemble release tree
+        run: node scripts/build-release-branch.mjs
+      - name: Push release branch and tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: release-branch
+        run: |
+          set -euo pipefail
+          git init -q -b release
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "release ${GITHUB_REF_NAME}" -m "Built by ci.yml from ${GITHUB_SHA}. Do not commit here; edit main."
+          git tag "release-${GITHUB_REF_NAME}"
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -q --force "$remote" release
+          git push -q "$remote" "release-${GITHUB_REF_NAME}"
