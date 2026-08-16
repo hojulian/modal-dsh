@@ -1,3 +1,8 @@
+# modal-dsh repo-specific
+credentials.json
+stderr.log
+bridge-diag.log
+
 # Logs
 logs
 *.log
