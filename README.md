@@ -1,4 +1,4 @@
-# dsh-modal-sandbox
+# modal-dsh
 
 A Modal sandbox bridge plus a DSH dynamic Cordis plugin that lets a DSH session
 create and drive [Modal](https://modal.com) sandboxes — secure, isolated cloud
@@ -30,7 +30,7 @@ JSON over its stdio.
 
 On activation the plugin:
 
-1. resolves the bridge dir `<workspaceRoot>/modal-sandbox` (via the `sandboxPolicy`
+1. resolves the bridge dir `<workspaceRoot>/modal-dsh` (via the `sandboxPolicy`
    service; a hardcoded dev path is the last-resort fallback),
 2. verifies `bridge.mjs` exists, rewrites `package.json` if it drifted, and runs
    `npm install` if `modal` is missing,

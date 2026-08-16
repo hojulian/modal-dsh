@@ -1,4 +1,4 @@
-// Dev source of record for the "Modal Sandbox" dynamic Cordis Plugin (host half).
+// Dev source of record for the "modal-dsh" dynamic Cordis Plugin (host half).
 // This exact text is submitted VERBATIM via cordis_define (no substitution).
 // Runs as the BODY of an async function inside the DSH vm sandbox: `harness`,
 // `console`, `atob`, `btoa`, TextEncoder/Decoder are globals; `ctx` is only
@@ -9,27 +9,27 @@
   // <bridgeDir>/bridge.mjs (maintained by the session dev workflow, smoke-tested
   // before each define) is the single source of truth.
   const BRIDGE_PKG = JSON.stringify({
-    name: 'dsh-modal-sandbox-bridge',
+    name: 'modal-dsh',
     private: true,
     version: '0.1.0',
     type: 'module',
-    description: 'Long-lived bridge process hosting the Modal JS SDK for the DSH Modal Sandbox plugin.',
+    description: 'Long-lived bridge process hosting the Modal JS SDK for the DSH modal-dsh plugin.',
     dependencies: { modal: '^0.9.0' }
   });
 
   const FALLBACK_BRIDGE_ROOT = '/opt/dsh/workspace/dhs';
 
   return {
-    name: 'modal-sandbox',
+    name: 'modal-dsh',
     apply(ctx) {
       const fs = ctx.get('fs');
       const subprocess = ctx.get('subprocess');
       const credentialsSvc = ctx.get('credentials');
       const timer = ctx.get('timer');
       const policy = ctx.get('sandboxPolicy');
-      if (!fs || !subprocess) throw new Error('modal-sandbox needs the "fs" and "subprocess" services mounted in the composition');
+      if (!fs || !subprocess) throw new Error('modal-dsh needs the "fs" and "subprocess" services mounted in the composition');
 
-      const bridgeDir = ((policy && policy.workspaceRoot) || FALLBACK_BRIDGE_ROOT) + '/modal-sandbox';
+      const bridgeDir = ((policy && policy.workspaceRoot) || FALLBACK_BRIDGE_ROOT) + '/modal-dsh';
       const bridgePath = bridgeDir + '/bridge.mjs';
 
       let bridge = null;
@@ -55,7 +55,7 @@
         const line = '[t+' + (Date.now() - diagT0) + 'ms #' + (++diagSeq) + '] ' + msg;
         diagLines.push(line);
         if (diagLines.length > 100) diagLines.splice(0, diagLines.length - 100);
-        try { console.error('modal-sandbox: [diag] ' + line); } catch (e) {}
+        try { console.error('modal-dsh: [diag] ' + line); } catch (e) {}
         try {
           const t = await fs.resolve(DIAG_PATH);
           await fs.writeText(t, diagLines.join('\n') + '\n');
@@ -127,7 +127,7 @@
           if (parts.length === 2) return { tokenId: parts[0], tokenSecret: parts[1] };
           throw new Error("the 'modal' credential should be '<token id> <token secret>'");
         }).catch((e) => {
-          console.error('modal-sandbox: credential service lookup failed: ' + (e && e.message ? e.message : e));
+          console.error('modal-dsh: credential service lookup failed: ' + (e && e.message ? e.message : e));
           return null;
         });
       }
@@ -393,7 +393,7 @@
 
       defTool({
         name: 'modal_sandbox_set_credentials',
-        description: 'Set the Modal API credentials for this session. Persists them to <workspace>/modal-sandbox/credentials.json (kept for restarts) and applies them to the running bridge immediately. Use when modal tools report that Modal credentials are not configured.',
+        description: 'Set the Modal API credentials for this session. Persists them to <workspace>/modal-dsh/credentials.json (kept for restarts) and applies them to the running bridge immediately. Use when modal tools report that Modal credentials are not configured.',
         parameters: {
           tokenId: { type: 'string', required: true, description: 'MODAL_TOKEN_ID value.' },
           tokenSecret: { type: 'string', required: true, description: 'MODAL_TOKEN_SECRET value.' }
@@ -422,7 +422,7 @@
         }
       };
 
-      console.log('modal-sandbox: activating (bridge dir ' + bridgeDir + ')');
+      console.log('modal-dsh: activating (bridge dir ' + bridgeDir + ')');
       void diag('activating (bridge dir ' + bridgeDir + ')');
       const bootstrap = Promise.resolve()
         .then(() => probeEnvCreds())
@@ -432,17 +432,17 @@
           creds = fileCreds || null;
           return ensureBridge();
         })
-        .then(() => console.log('modal-sandbox: ready (creds source: ' + (creds ? 'explicit' : 'ambient/fallback') + ')'))
+        .then(() => console.log('modal-dsh: ready (creds source: ' + (creds ? 'explicit' : 'ambient/fallback') + ')'))
         .catch((e) => {
-          const msg = 'modal-sandbox: bootstrap failed (tools will retry on first use): ' + (e && e.message ? e.message : e);
+          const msg = 'modal-dsh: bootstrap failed (tools will retry on first use): ' + (e && e.message ? e.message : e);
           console.error(msg);
           void diag('bootstrap failed: ' + (e && e.message ? e.message : e));
         });
 
       ctx.effect(() => () => {
         for (const d of toolDisposers) { try { d(); } catch (e) {} }
-      }, 'modal-sandbox: tools');
-      ctx.effect(() => cleanupBridge, 'modal-sandbox: bridge');
+      }, 'modal-dsh: tools');
+      ctx.effect(() => cleanupBridge, 'modal-dsh: bridge');
       void bootstrap;
     }
   };
